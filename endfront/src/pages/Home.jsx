@@ -16,8 +16,8 @@ export default function Home() {
   const [filterStatus, setFilterStatus] = useState("");
   
   // Sorting state
-  const [sortBy, setSortBy] = useState("date"); // date, title, author
-  const [sortOrder, setSortOrder] = useState("desc"); // asc, desc
+  const [sortBy, setSortBy] = useState("date"); 
+  const [sortOrder, setSortOrder] = useState("desc"); 
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
