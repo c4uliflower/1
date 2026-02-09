@@ -30,7 +30,7 @@ export default function Home() {
   // Fetch posts from API
   const fetchPosts = async () => {
     try {
-      const res = await axios.get("http://127.0.0.1:8000/api/posts");
+      const res = await axios.get("http://localhost:8000/api/posts");
       setPosts(res.data);
     } catch (err) {
       console.error(err);
@@ -41,8 +41,8 @@ export default function Home() {
 
   const handleDelete = async (id) => {
     try {
-      await axios.delete(`http://127.0.0.1:8000/api/posts/${id}`);
-      setPosts(posts.filter(post => post.id !== id));
+      await axios.delete(`http://localhost:8000/api/posts/${id}`);
+      setPosts(prevPosts => prevPosts.filter(post => post.id !== id));
       setShowDeleteModal(false);
       setPostToDelete(null);
     } catch (err) {

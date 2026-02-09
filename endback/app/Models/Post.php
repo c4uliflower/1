@@ -3,9 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Post extends Model
 {
+
+        use SoftDeletes;
+    
     /*
     |--------------------------------------------------------------------------
     | Mass Assignable Fields
@@ -30,5 +34,6 @@ class Post extends Model
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'deleted_at' => 'datetime'
     ];
 }
