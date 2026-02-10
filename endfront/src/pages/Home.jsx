@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
+import LogoutButton from "../components/LogoutButton";
 
 export default function Home() {
 
   // Data states
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState("");
   
   // Search & Filter states
   const [searchTerm, setSearchTerm] = useState("");
@@ -27,8 +29,14 @@ export default function Home() {
   const [selectedPost, setSelectedPost] = useState(null);
   const [postToDelete, setPostToDelete] = useState(null);
 
+  // Get user data from localStorage
+  const storedUser = localStorage.getItem("user");
+  const user = storedUser ? JSON.parse(storedUser) : null;
+  const role = user?.role;
+
   // Fetch posts from API
   const fetchPosts = async () => {
+    // Set loading state
     try {
       const res = await axios.get("http://localhost:8000/api/posts");
       setPosts(res.data);
@@ -39,6 +47,27 @@ export default function Home() {
     }
   };
 
+  // Fetch user profile to get name using JWT /me endpoint
+  const fetchUserProfile = async () => {
+    try {
+      // Get token from localStorage
+      const token = localStorage.getItem("token");
+      const res = await axios.get("http://localhost:8000/api/me", {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setUserName(res.data.name);
+    } catch (err) {
+      console.error("Failed to fetch user profile:", err);
+      // Fallback to localStorage if API fails
+      if (user?.name) {
+        setUserName(user.name);
+      }
+    }
+  };
+
+  // Handle post deletion
   const handleDelete = async (id) => {
     try {
       await axios.delete(`http://localhost:8000/api/posts/${id}`);
@@ -51,18 +80,22 @@ export default function Home() {
     }
   };
 
+  // Open delete modal
   const openDeleteModal = (post) => {
     setPostToDelete(post);
     setShowDeleteModal(true);
   };
 
+  // Open view modal
   const openViewModal = (post) => {
     setSelectedPost(post);
     setShowViewModal(true);
   };
 
+  // Fetch posts and user profile on component mount
   useEffect(() => {
     fetchPosts();
+    fetchUserProfile();
   }, []);
 
   // Filter and search logic
@@ -103,19 +136,34 @@ export default function Home() {
   const indexOfFirstPost = indexOfLastPost - postsPerPage;
   const currentPosts = sortedPosts.slice(indexOfFirstPost, indexOfLastPost);
   const totalPages = Math.ceil(sortedPosts.length / postsPerPage);
-
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
   // Get unique categories and statuses for filters
   const categories = [...new Set(posts.map(post => post.category))];
   const statuses = [...new Set(posts.map(post => post.status))];
 
+  // Render the component
   return (
     <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
-      <header style={{ marginBottom: "30px", borderBottom: "2px solid #333", paddingBottom: "10px" }}>
-        <h1 style={{ margin: "0", color: "#333" }}>Post Manager</h1>
-        <p style={{ color: "#666", margin: "5px 0 0 0" }}>Manage your content efficiently</p>
-        <p></p>
+      <header className="mb-8 border-b-2 border-gray-800 pb-2 grid grid-cols-3 items-start">
+        {/* Left Section: User Info */}
+        <div className="flex flex-col">
+          <p className="text-gray-500 mt-1 text-sm">
+            Logged in as: <span className="font-medium text-gray-700">{userName || "User"}</span>
+          </p>
+        </div>
+
+        {/* Center Section: Title */}
+        <div className="text-center">
+          <h1 className="m-0 text-gray-800 text-4x2 leading-tight">
+            Bulletin
+          </h1>
+        </div>
+
+        {/* Right Section: Logout */}
+        <div className="flex justify-end">
+          <LogoutButton />
+        </div>
       </header>
 
       <main>
@@ -331,6 +379,7 @@ export default function Home() {
                       >
                         View
                       </button>
+                      {(role === "editor" || role === "admin") && (
                       <Link
                         to={`/edit/${post.id}`}
                         style={{
@@ -346,6 +395,8 @@ export default function Home() {
                       >
                         Edit
                       </Link>
+                      )}
+                      {role === "admin" && (
                       <button
                         onClick={() => openDeleteModal(post)}
                         style={{
@@ -360,6 +411,7 @@ export default function Home() {
                       >
                         Delete
                       </button>
+                      )}
                     </td>
                   </tr>
                 ))}
