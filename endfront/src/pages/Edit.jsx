@@ -64,6 +64,7 @@ export default function Edit() {
   };
 
   return (
+    
     // Main container
     <div style={{ padding: "20px", fontFamily: "Arial, sans-serif", maxWidth: "800px", margin: "0 auto" }}>
       <h1 style={{ marginBottom: "30px", color: "#333" }}>Edit Post</h1>

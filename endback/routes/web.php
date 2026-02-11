@@ -1,7 +1,8 @@
 <?php
-
+use App\Http\Controllers\PostController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+// Admin-only route for exporting posts as PDF
+
+
+

@@ -2,9 +2,9 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import LogoutButton from "../components/LogoutButton";
+import ExportButton from "../components/ExportButton";
 
 export default function Home() {
-
   // Data states
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +36,6 @@ export default function Home() {
 
   // Fetch posts from API
   const fetchPosts = async () => {
-    // Set loading state
     try {
       const res = await axios.get("http://localhost:8000/api/posts");
       setPosts(res.data);
@@ -50,7 +49,6 @@ export default function Home() {
   // Fetch user profile to get name using JWT /me endpoint
   const fetchUserProfile = async () => {
     try {
-      // Get token from localStorage
       const token = localStorage.getItem("token");
       const res = await axios.get("http://localhost:8000/api/me", {
         headers: {
@@ -60,7 +58,6 @@ export default function Home() {
       setUserName(res.data.name);
     } catch (err) {
       console.error("Failed to fetch user profile:", err);
-      // Fallback to localStorage if API fails
       if (user?.name) {
         setUserName(user.name);
       }
@@ -70,7 +67,12 @@ export default function Home() {
   // Handle post deletion
   const handleDelete = async (id) => {
     try {
-      await axios.delete(`http://localhost:8000/api/posts/${id}`);
+      const token = localStorage.getItem("token");
+      await axios.delete(`http://localhost:8000/api/posts/${id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
       setPosts(prevPosts => prevPosts.filter(post => post.id !== id));
       setShowDeleteModal(false);
       setPostToDelete(null);
@@ -136,13 +138,13 @@ export default function Home() {
   const indexOfFirstPost = indexOfLastPost - postsPerPage;
   const currentPosts = sortedPosts.slice(indexOfFirstPost, indexOfLastPost);
   const totalPages = Math.ceil(sortedPosts.length / postsPerPage);
+
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
   // Get unique categories and statuses for filters
   const categories = [...new Set(posts.map(post => post.category))];
   const statuses = [...new Set(posts.map(post => post.status))];
 
-  // Render the component
   return (
     <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
       <header className="mb-8 border-b-2 border-gray-800 pb-2 grid grid-cols-3 items-start">
@@ -155,7 +157,7 @@ export default function Home() {
 
         {/* Center Section: Title */}
         <div className="text-center">
-          <h1 className="m-0 text-gray-800 text-4x2 leading-tight">
+          <h1 className="m-0 text-gray-800 text-4xl leading-tight">
             Bulletin
           </h1>
         </div>
@@ -167,22 +169,29 @@ export default function Home() {
       </header>
 
       <main>
-        {/* All Posts Section */}
+        {/* All Posts Section with Export Button */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <h2 style={{ margin: "0" }}>All Posts</h2>
-          <Link 
-            to="/create-new" 
-            style={{ 
-              padding: "10px 20px", 
-              backgroundColor: "#4CAF50", 
-              color: "white", 
-              textDecoration: "none", 
-              borderRadius: "5px",
-              fontWeight: "bold"
-            }}
-          >
-            + Create New
-          </Link>
+          
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            {/* Export Button - Admin Only */}
+            {role === "admin" && <ExportButton />}
+            
+            {/* Create New Button */}
+            <Link 
+              to="/create-new" 
+              style={{ 
+                padding: "10px 20px", 
+                backgroundColor: "#4CAF50", 
+                color: "white", 
+                textDecoration: "none", 
+                borderRadius: "5px",
+                fontWeight: "bold"
+              }}
+            >
+              + Create New
+            </Link>
+          </div>
         </div>
 
         {/* Search and Filter Section */}
