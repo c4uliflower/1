@@ -27,7 +27,6 @@ export default function LogoutButton() {
           border: "none",
           borderRadius: "5px",
           cursor: "pointer",
-          fontSize: "14px",
           fontWeight: "bold"
         }}
       >

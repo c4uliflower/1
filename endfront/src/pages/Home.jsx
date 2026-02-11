@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import axios from "axios";
 import LogoutButton from "../components/LogoutButton";
 import ExportButton from "../components/ExportButton";
+import ManageUsersButton from "../components/ManageUsersButton";
 
 export default function Home() {
   // Data states
@@ -173,9 +174,14 @@ export default function Home() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <h2 style={{ margin: "0" }}>All Posts</h2>
           
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-            {/* Export Button - Admin Only */}
-            {role === "admin" && <ExportButton />}
+          <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
+            {/* Admin Only Buttons */}
+            {role === "admin" && (
+              <>
+                <ManageUsersButton />
+                <ExportButton />
+              </>
+            )}
             
             {/* Create New Button */}
             <Link 
