@@ -6,6 +6,7 @@ import Login from "./pages/Login.jsx"
 import Register from "./pages/Register.jsx";  
 import ForgotPassword from "./pages/ForgotPassword.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import ManageUsers from "./pages/ManageUsers.jsx";
 
 // Main App component that defines the routes for the application
 function App() {
@@ -33,6 +34,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Edit />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/manage-users"
+          element={
+            <ProtectedRoute>
+              <ManageUsers />
             </ProtectedRoute>
           }
         />

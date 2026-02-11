@@ -57,14 +57,12 @@ export default function ExportButton() {
         onClick={() => setShowExportModal(true)}
         style={{
           padding: "10px 20px",
-          backgroundColor: "#9C27B0",
+          backgroundColor: "#FF9800",
           color: "white",
           border: "none",
           borderRadius: "5px",
           cursor: "pointer",
-          fontSize: "14px",
           fontWeight: "bold",
-          marginLeft: "10px"
         }}
       >
         📄 Export to PDF
