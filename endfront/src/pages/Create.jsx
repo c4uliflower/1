@@ -41,25 +41,30 @@ export default function Create() {
     setIsSubmitting(true);
     setError(null);
     
+    // Get your JWT token from wherever you store it (usually localStorage or a cookie)
+    const token = localStorage.getItem('token');
+
     // Send form data to the backend
     try {
-      const response = await axios.post('http://localhost:8000/api/create-new', formData, {
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        }
-      });
-      
-      setShowCreateModal(false);
-      navigate('/');
-      
+    // 1. Change the URL to '/api/posts'
+    const response = await axios.post('http://localhost:8000/api/posts', formData, {
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        // 2. Add the Authorization header for JWT
+        'Authorization': `Bearer ${token}` 
+      }
+    });
+    // 3. Handle successful response
+    setShowCreateModal(false);
+    navigate('/');
     } catch (error) {
       console.error("Error submitting form:", error);
       
       const errorMessage = error.response?.data?.message || 
                           error.response?.data?.errors || 
                           'Failed to create post';
-      
+      // 4. Set error state to display the error message
       setError(errorMessage);
       setShowCreateModal(false);
     } finally {
