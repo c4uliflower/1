@@ -23,25 +23,6 @@ export default function ForgotPassword() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage(""); // Clear previous errors
-
-    // Email validation
-    if (!isValidEmail(email)) {
-      setErrorMessage("Please enter a valid email address (e.g., user@example.com)");
-      return;
-    }
-
-    // Password validation
-    if (!isValidPassword(password)) {
-      setErrorMessage("Password must be at least 6 characters long");
-      return;
-    }
-
-    // Password match validation
-    if (password !== confirmPassword) {
-      setErrorMessage("Passwords do not match. Please make sure both passwords are identical.");
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {

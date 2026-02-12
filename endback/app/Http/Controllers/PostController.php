@@ -12,9 +12,108 @@ class PostController extends Controller
 {
     /*
     |--------------------------------------------------------------------------
+    | Index (Get All Posts with Filters, Sorting, Pagination)
+    |--------------------------------------------------------------------------
+    | UPDATED: Now handles search, filter, sort, pagination FROM FRONTEND
+    */
+    public function index(Request $request)
+    {
+        try {
+            // Start query
+            $query = Post::query();
+
+            // SEARCH LOGIC (moved from frontend)
+            if ($request->filled('search')) {
+                $searchTerm = $request->search;
+                $query->where(function($q) use ($searchTerm) {
+                    $q->where('title', 'LIKE', "%{$searchTerm}%")
+                      ->orWhere('author', 'LIKE', "%{$searchTerm}%")
+                      ->orWhere('category', 'LIKE', "%{$searchTerm}%");
+                });
+            }
+
+            // CATEGORY FILTER (moved from frontend)
+            if ($request->filled('category')) {
+                $query->where('category', $request->category);
+            }
+
+            // STATUS FILTER (moved from frontend)
+            if ($request->filled('status')) {
+                $query->where('status', $request->status);
+            }
+
+            // SORTING LOGIC (moved from frontend)
+            $sortBy = $request->get('sort_by', 'date');
+            $sortOrder = $request->get('sort_order', 'desc');
+
+            switch ($sortBy) {
+                case 'title':
+                    $query->orderBy('title', $sortOrder);
+                    break;
+                case 'author':
+                    $query->orderBy('author', $sortOrder);
+                    break;
+                case 'date':
+                default:
+                    $query->orderBy('created_at', $sortOrder);
+                    break;
+            }
+
+            // PAGINATION (moved from frontend)
+            $perPage = $request->get('per_page', 10);
+            $posts = $query->paginate($perPage);
+
+            // Return Laravel pagination format
+            return response()->json($posts);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching posts', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Error fetching posts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Get Filter Options (Categories and Statuses)
+    |--------------------------------------------------------------------------
+    | NEW: Returns unique categories and statuses for dropdowns
+    */
+    public function getFilters()
+    {
+        try {
+            $categories = Post::select('category')
+                ->distinct()
+                ->whereNotNull('category')
+                ->orderBy('category')
+                ->pluck('category');
+
+            $statuses = Post::select('status')
+                ->distinct()
+                ->whereNotNull('status')
+                ->orderBy('status')
+                ->pluck('status');
+
+            return response()->json([
+                'categories' => $categories,
+                'statuses' => $statuses
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error fetching filters', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Error fetching filters',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Store (Create a New Post)
     |--------------------------------------------------------------------------
-    | Called when React sends POST /api/create-new
+    | Called when React sends POST /api/posts
     */
     public function store(Request $request)
     {
@@ -61,35 +160,22 @@ class PostController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | Index (Get All Posts)
-    |--------------------------------------------------------------------------
-    | Called when React sends GET /api/posts
-    */
-    public function index()
-    {
-        try {
-            $posts = Post::orderBy('created_at', 'desc')->get();
-            return response()->json($posts);
-        } catch (\Exception $e) {
-            Log::error('Error fetching posts', ['error' => $e->getMessage()]);
-            return response()->json([
-                'message' => 'Error fetching posts',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /*
-    |--------------------------------------------------------------------------
     | Show (Get Single Post)
     |--------------------------------------------------------------------------
     | Called when React sends GET /api/posts/{id}
     */
     public function show($id)
     {
-        // findOrFail automatically returns 404 if not found
-        $post = Post::findOrFail($id);
-        return response()->json($post);
+        try {
+            $post = Post::findOrFail($id);
+            return response()->json($post);
+        } catch (\Exception $e) {
+            Log::error('Error fetching post', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Post not found',
+                'error' => $e->getMessage()
+            ], 404);
+        }
     }
 
     /*
@@ -100,25 +186,40 @@ class PostController extends Controller
     */
     public function update(Request $request, $id)
     {
-        // Validate incoming data
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'author' => 'required|string|max:255',
-            'category' => 'required|string',
-            'status' => 'required|string',
-            'content' => 'required|string',
-        ]);
+        try {
+            // Validate incoming data
+            $validated = $request->validate([
+                'title' => 'required|string|max:255',
+                'author' => 'required|string|max:255',
+                'category' => 'required|string',
+                'status' => 'required|string',
+                'content' => 'required|string',
+            ]);
 
-        // Find post or throw 404
-        $post = Post::findOrFail($id);
-        
-        // Update database row with validated data
-        $post->update($validated);
+            // Find post or throw 404
+            $post = Post::findOrFail($id);
+            
+            // Update database row with validated data
+            $post->update($validated);
 
-        return response()->json([
-            'message' => 'Post updated successfully',
-            'post' => $post
-        ]);
+            return response()->json([
+                'message' => 'Post updated successfully',
+                'post' => $post
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+
+        } catch (\Exception $e) {
+            Log::error('Error updating post', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Error updating post',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /*
@@ -129,15 +230,23 @@ class PostController extends Controller
     */
     public function destroy($id)
     {
-        // Find post or throw 404
-        $post = Post::findOrFail($id);
+        try {
+            // Find post or throw 404
+            $post = Post::findOrFail($id);
 
-        // Delete from database (soft delete)
-        $post->delete();
+            // Delete from database (soft delete)
+            $post->delete();
 
-        return response()->json([
-            'message' => 'Post deleted successfully'
-        ]);
+            return response()->json([
+                'message' => 'Post deleted successfully'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error deleting post', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Error deleting post',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /*

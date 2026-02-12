@@ -13,52 +13,9 @@ export default function Register() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const isValidEmail = (email) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  };
-
-  const isValidName = (name) => {
-    // Only letters, spaces, hyphens, and apostrophes
-    return /^[a-zA-Z\s'-]+$/.test(name);
-  };
-
-  const isValidPassword = (password) => {
-    // At least 6 characters
-    return password.length >= 6;
-  };
-
   const handleRegister = async (e) => {
     e.preventDefault();
     setErrorMessage(""); // Clear previous errors
-
-    // Name validation
-    if (!form.name.trim()) {
-      setErrorMessage("Please enter your name");
-      return;
-    }
-
-    if (form.name.trim().length < 2) {
-      setErrorMessage("Name must be at least 2 characters long");
-      return;
-    }
-
-    if (!isValidName(form.name)) {
-      setErrorMessage("Name can only contain letters, spaces, hyphens, and apostrophes. No numbers or special characters allowed.");
-      return;
-    }
-
-    // Email validation
-    if (!isValidEmail(form.email)) {
-      setErrorMessage("Please enter a valid email address (e.g., user@example.com)");
-      return;
-    }
-
-    // Password validation
-    if (!isValidPassword(form.password)) {
-      setErrorMessage("Password must be at least 6 characters long");
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
