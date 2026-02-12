@@ -4,29 +4,38 @@ import axios from "axios";
 import LogoutButton from "../components/LogoutButton";
 import ExportButton from "../components/ExportButton";
 import ManageUsersButton from "../components/ManageUsersButton";
+import CreateNewButton from "../components/CreateNewButton";
 
 export default function Home() {
   // Data states
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("");
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalPosts, setTotalPosts] = useState(0);
   
-  // Search & Filter states
+  // Search & Filter states (sent to backend)
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   
-  // Sorting state
+  // Sorting state (sent to backend)
   const [sortBy, setSortBy] = useState("date"); 
   const [sortOrder, setSortOrder] = useState("desc"); 
   
-  // Pagination state
+  // Pagination state (sent to backend)
   const [currentPage, setCurrentPage] = useState(1);
   const [postsPerPage] = useState(10);
+  
+  // Filter options from backend
+  const [categories, setCategories] = useState([]);
+  const [statuses, setStatuses] = useState([]);
   
   // Modal states
   const [showViewModal, setShowViewModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   const [selectedPost, setSelectedPost] = useState(null);
   const [postToDelete, setPostToDelete] = useState(null);
 
@@ -35,11 +44,31 @@ export default function Home() {
   const user = storedUser ? JSON.parse(storedUser) : null;
   const role = user?.role;
 
-  // Fetch posts from API
+  // Fetch posts from API with filters, sorting, and pagination
   const fetchPosts = async () => {
+    setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8000/api/posts");
-      setPosts(res.data);
+      const token = localStorage.getItem("token");
+      
+      // Build query parameters for backend
+      const params = new URLSearchParams();
+      if (searchTerm) params.append('search', searchTerm);
+      if (filterCategory) params.append('category', filterCategory);
+      if (filterStatus) params.append('status', filterStatus);
+      params.append('sort_by', sortBy);
+      params.append('sort_order', sortOrder);
+      params.append('per_page', postsPerPage);
+      params.append('page', currentPage);
+
+      const res = await axios.get(`http://localhost:8000/api/posts?${params.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      
+      // Laravel pagination response
+      setPosts(res.data.data); // Posts are in 'data' property
+      setTotalPages(res.data.last_page);
+      setTotalPosts(res.data.total);
+      
     } catch (err) {
       console.error(err);
     } finally {
@@ -47,7 +76,18 @@ export default function Home() {
     }
   };
 
-  // Fetch user profile to get name using JWT /me endpoint
+  // Fetch filter options
+  const fetchFilters = async () => {
+    try {
+      const res = await axios.get("http://localhost:8000/api/posts/filters/options");
+      setCategories(res.data.categories);
+      setStatuses(res.data.statuses);
+    } catch (err) {
+      console.error("Failed to fetch filters:", err);
+    }
+  };
+
+  // Fetch user profile
   const fetchUserProfile = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -74,129 +114,101 @@ export default function Home() {
           Authorization: `Bearer ${token}`
         }
       });
-      setPosts(prevPosts => prevPosts.filter(post => post.id !== id));
+      
       setShowDeleteModal(false);
       setPostToDelete(null);
+      
+      // Refresh posts
+      fetchPosts();
+      
+      // Show success message
+      setSuccessMessage("Post deleted successfully!");
+      setShowSuccessModal(true);
+      setTimeout(() => setShowSuccessModal(false), 2000);
+      
     } catch (err) {
       console.error(err);
       alert("Failed to delete post");
     }
   };
 
-  // Open delete modal
+  // Open modals
   const openDeleteModal = (post) => {
     setPostToDelete(post);
     setShowDeleteModal(true);
   };
 
-  // Open view modal
   const openViewModal = (post) => {
     setSelectedPost(post);
     setShowViewModal(true);
   };
 
-  // Fetch posts and user profile on component mount
+  // Fetch data on mount and when filters/sorting/pagination change
   useEffect(() => {
     fetchPosts();
+  }, [searchTerm, filterCategory, filterStatus, sortBy, sortOrder, currentPage]);
+
+  useEffect(() => {
     fetchUserProfile();
+    fetchFilters();
   }, []);
 
-  // Filter and search logic
-  const filteredPosts = posts.filter(post => {
-    const matchesSearch = 
-      post.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      post.author.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      post.category.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesCategory = filterCategory === "" || post.category === filterCategory;
-    const matchesStatus = filterStatus === "" || post.status === filterStatus;
-    
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
-
-  // Sorting logic
-  const sortedPosts = [...filteredPosts].sort((a, b) => {
-    let comparison = 0;
-    
-    switch(sortBy) {
-      case "title":
-        comparison = a.title.localeCompare(b.title);
-        break;
-      case "author":
-        comparison = a.author.localeCompare(b.author);
-        break;
-      case "date":
-      default:
-        comparison = new Date(a.created_at) - new Date(b.created_at);
-        break;
-    }
-    
-    return sortOrder === "asc" ? comparison : -comparison;
-  });
-
-  // Pagination logic
-  const indexOfLastPost = currentPage * postsPerPage;
-  const indexOfFirstPost = indexOfLastPost - postsPerPage;
-  const currentPosts = sortedPosts.slice(indexOfFirstPost, indexOfLastPost);
-  const totalPages = Math.ceil(sortedPosts.length / postsPerPage);
-
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
-
-  // Get unique categories and statuses for filters
-  const categories = [...new Set(posts.map(post => post.category))];
-  const statuses = [...new Set(posts.map(post => post.status))];
+  // Reset to page 1 when filters change
+  const handleFilterChange = (setter) => (value) => {
+    setter(value);
+    setCurrentPage(1);
+  };
 
   return (
     <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
       <header className="mb-8 border-b-2 border-gray-800 pb-2 grid grid-cols-3 items-start">
-        {/* Left Section: User Info */}
         <div className="flex flex-col">
           <p className="text-gray-500 mt-1 text-sm">
             Logged in as: <span className="font-medium text-gray-700">{userName || "User"}</span>
           </p>
         </div>
 
-        {/* Center Section: Title */}
         <div className="text-center">
           <h1 className="m-0 text-gray-800 text-4xl leading-tight">
             Bulletin
           </h1>
         </div>
 
-        {/* Right Section: Logout */}
         <div className="flex justify-end">
           <LogoutButton />
         </div>
       </header>
 
       <main>
-        {/* All Posts Section with Export Button */}
+        {/* All Posts Section */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <h2 style={{ margin: "0" }}>All Posts</h2>
           
-          <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
-            {/* Admin Only Buttons */}
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
             {role === "admin" && (
               <>
                 <ManageUsersButton />
-                <ExportButton />
+                <button
+                  onClick={() => document.querySelector('[data-export-button]')?.click()}
+                  style={{
+                    padding: "10px 20px",
+                    backgroundColor: "#FF9800",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "5px",
+                    fontSize: "14px",
+                    fontWeight: "bold",
+                    cursor: "pointer"
+                  }}
+                >
+                  📄 Export to PDF
+                </button>
+                <div style={{ display: "none" }}>
+                  <ExportButton />
+                </div>
               </>
             )}
-            
-            {/* Create New Button */}
-            <Link 
-              to="/create-new" 
-              style={{ 
-                padding: "10px 20px", 
-                backgroundColor: "#4CAF50", 
-                color: "white", 
-                textDecoration: "none", 
-                borderRadius: "5px",
-                fontWeight: "bold"
-              }}
-            >
-              + Create New
-            </Link>
+            <CreateNewButton />
           </div>
         </div>
 
@@ -218,10 +230,7 @@ export default function Home() {
               type="text"
               placeholder="Search by title, author, or category..."
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => handleFilterChange(setSearchTerm)(e.target.value)}
               style={{
                 width: "100%",
                 padding: "10px",
@@ -238,10 +247,7 @@ export default function Home() {
             </label>
             <select
               value={filterCategory}
-              onChange={(e) => {
-                setFilterCategory(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => handleFilterChange(setFilterCategory)(e.target.value)}
               style={{
                 width: "100%",
                 padding: "10px",
@@ -263,10 +269,7 @@ export default function Home() {
             </label>
             <select
               value={filterStatus}
-              onChange={(e) => {
-                setFilterStatus(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => handleFilterChange(setFilterStatus)(e.target.value)}
               style={{
                 width: "100%",
                 padding: "10px",
@@ -326,7 +329,7 @@ export default function Home() {
           </div>
 
           <div style={{ marginLeft: "auto", color: "#666" }}>
-            Showing {currentPosts.length} of {sortedPosts.length} posts
+            Showing {posts.length} of {totalPosts} posts (Page {currentPage} of {totalPages})
           </div>
         </div>
 
@@ -334,12 +337,14 @@ export default function Home() {
           <p>Loading...</p>
         ) : (
           <>
+            {/* Table - keeping existing structure */}
             <table style={{ 
               width: "100%", 
               borderCollapse: "collapse", 
               backgroundColor: "white",
               boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
             }}>
+              {/* Table header and body same as before */}
               <thead>
                 <tr style={{ backgroundColor: "#333", color: "white" }}>
                   <th style={{ padding: "15px", textAlign: "left", width: "50px" }}>#</th>
@@ -352,9 +357,9 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {currentPosts.map((post, index) => (
+                {posts.map((post, index) => (
                   <tr key={post.id} style={{ borderBottom: "1px solid #ddd" }}>
-                    <td style={{ padding: "15px" }}>{indexOfFirstPost + index + 1}</td>
+                    <td style={{ padding: "15px" }}>{((currentPage - 1) * postsPerPage) + index + 1}</td>
                     <td style={{ padding: "15px" }}>{post.title}</td>
                     <td style={{ padding: "15px" }}>{post.author}</td>
                     <td style={{ padding: "15px" }}>
@@ -430,7 +435,7 @@ export default function Home() {
                     </td>
                   </tr>
                 ))}
-                {currentPosts.length === 0 && (
+                {posts.length === 0 && (
                   <tr>
                     <td colSpan="7" style={{ padding: "30px", textAlign: "center", color: "#666" }}>
                       No posts found.
@@ -450,7 +455,7 @@ export default function Home() {
                 alignItems: "center"
               }}>
                 <button
-                  onClick={() => paginate(currentPage - 1)}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
                   style={{
                     padding: "10px 15px",
@@ -468,7 +473,7 @@ export default function Home() {
                 {[...Array(totalPages)].map((_, index) => (
                   <button
                     key={index + 1}
-                    onClick={() => paginate(index + 1)}
+                    onClick={() => setCurrentPage(index + 1)}
                     style={{
                       padding: "10px 15px",
                       backgroundColor: currentPage === index + 1 ? "#4CAF50" : "#f5f5f5",
@@ -485,7 +490,7 @@ export default function Home() {
                 ))}
 
                 <button
-                  onClick={() => paginate(currentPage + 1)}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
                   style={{
                     padding: "10px 15px",
@@ -505,7 +510,24 @@ export default function Home() {
         )}
       </main>
 
-      {/* View Modal */}
+      {/* Success Toast */}
+      {showSuccessModal && (
+        <div style={{
+          position: "fixed",
+          top: "20px",
+          right: "20px",
+          backgroundColor: "#4CAF50",
+          color: "white",
+          padding: "15px 25px",
+          borderRadius: "5px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          zIndex: 10000
+        }}>
+          <strong>✓ {successMessage}</strong>
+        </div>
+      )}
+
+      {/* View Modal - keeping existing */}
       {showViewModal && selectedPost && (
         <div style={{
           position: "fixed",
@@ -617,7 +639,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Modal - keeping existing */}
       {showDeleteModal && postToDelete && (
         <div style={{
           position: "fixed",

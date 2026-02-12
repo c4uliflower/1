@@ -19,6 +19,7 @@ Route::put('/users/{id}', [UserController::class, 'update']);
 Route::delete('/users/{id}', [UserController::class, 'destroy']);
 
 // Public
+Route::get('/posts/filters/options', [PostController::class, 'getFilters']);
 Route::get('/posts', [PostController::class, 'index']);
 Route::get('/posts/{id}', [PostController::class, 'show']);
 Route::post('/posts', [PostController::class, 'store']);
