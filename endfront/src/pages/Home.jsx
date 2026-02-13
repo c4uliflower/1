@@ -188,24 +188,7 @@ export default function Home() {
             {role === "admin" && (
               <>
                 <ManageUsersButton />
-                <button
-                  onClick={() => document.querySelector('[data-export-button]')?.click()}
-                  style={{
-                    padding: "10px 20px",
-                    backgroundColor: "#FF9800",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "5px",
-                    fontSize: "14px",
-                    fontWeight: "bold",
-                    cursor: "pointer"
-                  }}
-                >
-                  📄 Export to PDF
-                </button>
-                <div style={{ display: "none" }}>
-                  <ExportButton />
-                </div>
+                <ExportButton />
               </>
             )}
             <CreateNewButton />
