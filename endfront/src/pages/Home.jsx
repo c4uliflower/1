@@ -5,6 +5,7 @@ import LogoutButton from "../components/LogoutButton";
 import ExportButton from "../components/ExportButton";
 import ManageUsersButton from "../components/ManageUsersButton";
 import CreateNewButton from "../components/CreateNewButton";
+ import PostsKPIDashboard from "../components/PostsKPIDashboard";
 
 export default function Home() {
   // Data states
@@ -180,6 +181,10 @@ export default function Home() {
       </header>
 
       <main>
+
+        {/*KPI Dashboard */}
+        <PostsKPIDashboard />
+        
         {/* All Posts Section */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <h2 style={{ margin: "0" }}>All Posts</h2>

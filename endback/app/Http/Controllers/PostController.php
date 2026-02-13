@@ -7,6 +7,7 @@ use App\Models\Post;
 use Illuminate\Support\Facades\Log;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class PostController extends Controller
 {
@@ -384,4 +385,180 @@ class PostController extends Controller
                 return 'All Time';
         }
     }
+
+    /**
+ * Add these methods to your PostController.php
+ */
+
+/**
+ * Get KPI Dashboard Data for Posts
+ * GET /api/posts/kpi
+ */
+public function getKPI(Request $request)
+{
+    try {
+        $query = Post::query();
+        $timeRange = $request->get('time_range', 'this_month');
+        
+        // Apply category filter
+        if ($request->filled('category')) {
+            $query->where('category', $request->category);
+        }
+        
+        // Apply status filter
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        
+        // Get date range
+        [$startDate, $endDate, $previousStart, $previousEnd] = $this->getDateRange($timeRange);
+        
+        // Current period posts
+        $currentQuery = clone $query;
+        $currentQuery->whereBetween('created_at', [$startDate, $endDate]);
+        
+        // Previous period posts (for comparison)
+        $previousQuery = clone $query;
+        $previousQuery->whereBetween('created_at', [$previousStart, $previousEnd]);
+        
+        // Get counts
+        $totalPosts = $currentQuery->count();
+        $previousTotal = $previousQuery->count();
+        
+        $publishedPosts = (clone $currentQuery)->where('status', 'Published')->count();
+        $draftPosts = (clone $currentQuery)->where('status', 'Draft')->count();
+        $archivedPosts = (clone $currentQuery)->where('status', 'Archived')->count();
+        
+        // Get chart data - group by date
+        $chartData = $this->getChartData($query, $startDate, $endDate, $timeRange);
+        
+        return response()->json([
+            'totalPosts' => $totalPosts,
+            'previousTotal' => $previousTotal,
+            'publishedPosts' => $publishedPosts,
+            'draftPosts' => $draftPosts,
+            'archivedPosts' => $archivedPosts,
+            'chartData' => $chartData
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('Error fetching KPI data', ['error' => $e->getMessage()]);
+        return response()->json([
+            'message' => 'Error fetching KPI data',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Get date range based on time period
+ */
+private function getDateRange($timeRange)
+{
+    switch ($timeRange) {
+        case 'today':
+            $start = Carbon::today();
+            $end = Carbon::now();
+            $prevStart = Carbon::yesterday();
+            $prevEnd = Carbon::today();
+            break;
+            
+        case 'this_week':
+            $start = Carbon::now()->startOfWeek();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subWeek()->startOfWeek();
+            $prevEnd = Carbon::now()->subWeek()->endOfWeek();
+            break;
+            
+        case 'this_month':
+            $start = Carbon::now()->startOfMonth();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subMonth()->startOfMonth();
+            $prevEnd = Carbon::now()->subMonth()->endOfMonth();
+            break;
+            
+        case 'last_month':
+            $start = Carbon::now()->subMonth()->startOfMonth();
+            $end = Carbon::now()->subMonth()->endOfMonth();
+            $prevStart = Carbon::now()->subMonths(2)->startOfMonth();
+            $prevEnd = Carbon::now()->subMonths(2)->endOfMonth();
+            break;
+            
+        case 'this_year':
+            $start = Carbon::now()->startOfYear();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subYear()->startOfYear();
+            $prevEnd = Carbon::now()->subYear()->endOfYear();
+            break;
+            
+        case 'all_time':
+        default:
+            $start = Post::min('created_at') ?? Carbon::now()->subYear();
+            $end = Carbon::now();
+            $prevStart = Carbon::parse($start)->subYear();
+            $prevEnd = Carbon::parse($start);
+            break;
+    }
+    
+    return [$start, $end, $prevStart, $prevEnd];
+}
+
+/**
+ * Get chart data grouped by time period
+ */
+private function getChartData($query, $startDate, $endDate, $timeRange)
+{
+    $chartQuery = clone $query;
+    $chartQuery->whereBetween('created_at', [$startDate, $endDate]);
+    
+    // Determine grouping format based on time range
+    switch ($timeRange) {
+        case 'today':
+            // Group by hour
+            $format = '%H:00';
+            $sqlFormat = DB::raw("FORMAT(created_at, 'HH:00')");
+            break;
+            
+        case 'this_week':
+        case 'last_week':
+            // Group by day of week
+            $format = '%a';
+            $sqlFormat = DB::raw("FORMAT(created_at, 'ddd')");
+            break;
+            
+        case 'this_month':
+        case 'last_month':
+            // Group by day
+            $format = '%b %d';
+            $sqlFormat = DB::raw("FORMAT(created_at, 'MMM dd')");
+            break;
+            
+        case 'this_year':
+            // Group by month
+            $format = '%b';
+            $sqlFormat = DB::raw("FORMAT(created_at, 'MMM')");
+            break;
+            
+        case 'all_time':
+        default:
+            // Group by month
+            $format = '%b %Y';
+            $sqlFormat = DB::raw("FORMAT(created_at, 'MMM yyyy')");
+            break;
+    }
+    
+    $chartData = $chartQuery
+        ->selectRaw("$sqlFormat as date, COUNT(*) as posts")
+        ->groupBy('date')
+        ->orderBy('date')
+        ->get()
+        ->map(function($item) {
+            return [
+                'date' => $item->date,
+                'posts' => (int) $item->posts
+            ];
+        });
+    
+    return $chartData;
+}
 }

@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class UserController extends Controller
 {
@@ -179,4 +181,187 @@ class UserController extends Controller
             ], 500);
         }
     }
+
+    /**
+ * Get KPI Dashboard Data for Users
+ * GET /api/users/kpi
+ */
+public function getKPI(Request $request)
+{
+    try {
+        $query = User::query();
+        $timeRange = $request->get('time_range', 'this_month');
+        
+        // Apply role filter
+        if ($request->filled('role')) {
+            $query->where('role', $request->role);
+        }
+        
+        // Get date range
+        [$startDate, $endDate, $previousStart, $previousEnd] = $this->getDateRange($timeRange);
+        
+        // Current period users
+        $currentQuery = clone $query;
+        $currentQuery->whereBetween('created_at', [$startDate, $endDate]);
+        
+        // Previous period users (for comparison)
+        $previousQuery = clone $query;
+        $previousQuery->whereBetween('created_at', [$previousStart, $previousEnd]);
+        
+        // Get counts
+        $totalUsers = $currentQuery->count();
+        $previousTotal = $previousQuery->count();
+        
+        // Count by role in current period
+        $adminUsers = User::where('role', 'admin')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->count();
+            
+        $editorUsers = User::where('role', 'editor')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->count();
+            
+        $regularUsers = User::where('role', 'user')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->count();
+        
+        // Get chart data - group by date
+        $chartData = $this->getChartData($query, $startDate, $endDate, $timeRange);
+        
+        // Get role distribution (all time)
+        $roleDistribution = User::select('role', DB::raw('count(*) as value'))
+            ->groupBy('role')
+            ->get()
+            ->map(function($item) {
+                return [
+                    'name' => ucfirst($item->role),
+                    'value' => (int) $item->value
+                ];
+            });
+        
+        return response()->json([
+            'totalUsers' => $totalUsers,
+            'previousTotal' => $previousTotal,
+            'adminUsers' => $adminUsers,
+            'editorUsers' => $editorUsers,
+            'regularUsers' => $regularUsers,
+            'chartData' => $chartData,
+            'roleDistribution' => $roleDistribution
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('Error fetching user KPI data', ['error' => $e->getMessage()]);
+        return response()->json([
+            'message' => 'Error fetching KPI data',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Get date range based on time period
+ */
+private function getDateRange($timeRange)
+{
+    switch ($timeRange) {
+        case 'today':
+            $start = Carbon::today();
+            $end = Carbon::now();
+            $prevStart = Carbon::yesterday();
+            $prevEnd = Carbon::today();
+            break;
+            
+        case 'this_week':
+            $start = Carbon::now()->startOfWeek();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subWeek()->startOfWeek();
+            $prevEnd = Carbon::now()->subWeek()->endOfWeek();
+            break;
+            
+        case 'this_month':
+            $start = Carbon::now()->startOfMonth();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subMonth()->startOfMonth();
+            $prevEnd = Carbon::now()->subMonth()->endOfMonth();
+            break;
+            
+        case 'last_month':
+            $start = Carbon::now()->subMonth()->startOfMonth();
+            $end = Carbon::now()->subMonth()->endOfMonth();
+            $prevStart = Carbon::now()->subMonths(2)->startOfMonth();
+            $prevEnd = Carbon::now()->subMonths(2)->endOfMonth();
+            break;
+            
+        case 'this_year':
+            $start = Carbon::now()->startOfYear();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subYear()->startOfYear();
+            $prevEnd = Carbon::now()->subYear()->endOfYear();
+            break;
+            
+        case 'all_time':
+        default:
+            $start = User::min('created_at') ?? Carbon::now()->subYear();
+            $end = Carbon::now();
+            $prevStart = Carbon::parse($start)->subYear();
+            $prevEnd = Carbon::parse($start);
+            break;
+    }
+    
+    return [$start, $end, $prevStart, $prevEnd];
+}
+
+/**
+ * Get chart data grouped by time period
+ */
+private function getChartData($query, $startDate, $endDate, $timeRange)
+{
+    $chartQuery = clone $query;
+    $chartQuery->whereBetween('created_at', [$startDate, $endDate]);
+    
+    // Determine grouping format based on time range
+    switch ($timeRange) {
+        case 'today':
+            // Group by hour
+            $sqlFormat = DB::raw("FORMAT(created_at, 'HH:00')");
+            break;
+            
+        case 'this_week':
+        case 'last_week':
+            // Group by day of week
+            $sqlFormat = DB::raw("FORMAT(created_at, 'ddd')");
+            break;
+            
+        case 'this_month':
+        case 'last_month':
+            // Group by day
+            $sqlFormat = DB::raw("FORMAT(created_at, 'MMM dd')");
+            break;
+            
+        case 'this_year':
+            // Group by month
+            $sqlFormat = DB::raw("FORMAT(created_at, 'MMM')");
+            break;
+            
+        case 'all_time':
+        default:
+            // Group by month
+            $sqlFormat = DB::raw("FORMAT(created_at, 'MMM yyyy')");
+            break;
+    }
+    
+    $chartData = $chartQuery
+        ->selectRaw("$sqlFormat as date, COUNT(*) as users")
+        ->groupBy('date')
+        ->orderBy('date')
+        ->get()
+        ->map(function($item) {
+            return [
+                'date' => $item->date,
+                'users' => (int) $item->users
+            ];
+        });
+    
+    return $chartData;
+}
 }

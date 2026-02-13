@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import LogoutButton from "../components/LogoutButton";
+import UsersKPIDashboard from "../components/UsersKPIDashboard"; 
 
 export default function ManageUsers() {
   const [users, setUsers] = useState([]);
@@ -215,6 +216,10 @@ export default function ManageUsers() {
       </header>
 
       <main>
+
+        {/*KPI Dashboard */}
+        <UsersKPIDashboard />
+
         {/* Header with Create Button */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <h2 style={{ margin: "0" }}>All Users</h2>
