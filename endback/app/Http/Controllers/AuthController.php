@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use App\Models\ActivityLog;
 
 
 class AuthController extends Controller
@@ -53,6 +54,12 @@ class AuthController extends Controller
 
             // Generate JWT token
             $token = JWTAuth::fromUser($user);
+
+            // LOG REGISTRATION ACTIVITY
+            ActivityLog::logAuth('registered', $user, [
+                'email' => $user->email,
+                'role' => $user->role
+            ]);
 
             return response()->json([
                 'message' => 'Registration successful!',
@@ -109,11 +116,18 @@ class AuthController extends Controller
 
             // Attempt to create token
             if (!$token = JWTAuth::attempt($validated)) {
+                // LOG FAILED LOGIN ATTEMPT
+                ActivityLog::logAuth('login_failed', null, [
+                    'email' => $request->email,
+                    'reason' => 'Invalid credentials'
+                ]);
                 return response()->json([
                     'message' => 'Invalid email or password. Please try again.'
                 ], 401);
             }
-
+            
+            // LOG SUCCESSFUL LOGIN
+            ActivityLog::logAuth('login', $user);
             return response()->json([
                 'message' => 'Login successful!',
                 'token' => $token,
@@ -145,6 +159,13 @@ class AuthController extends Controller
     public function logout()
     {
         try {
+            $user = Auth::user();
+
+            // LOG LOGOUT
+            if ($user) {
+                ActivityLog::logAuth('logout', $user);
+            }
+
             JWTAuth::invalidate(JWTAuth::getToken());
             
             return response()->json([
@@ -203,9 +224,26 @@ class AuthController extends Controller
             // Find user by email
             $user = User::where('email', $validated['email'])->first();
 
+            if (! $user) {
+            // LOG FAILED PASSWORD RESET ATTEMPT
+            ActivityLog::logAuth('password_reset_failed', null, [
+                'email' => $request->email,
+                'reason' => 'Email not found'
+            ]);
+
+            return response()->json([
+                'message' => 'Email not found'
+            ], 404);
+        }
+
             // Update password
             $user->password = Hash::make($validated['password']);
             $user->save();
+
+            // LOG PASSWORD RESET
+        ActivityLog::logAuth('password_changed', $user, [
+            'method' => 'forgot_password'
+        ]);
 
             return response()->json([
                 'message' => 'Password reset successfully! You can now login with your new password.'

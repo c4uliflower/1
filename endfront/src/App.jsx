@@ -7,12 +7,14 @@ import Register from "./pages/Register.jsx";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import ManageUsers from "./pages/ManageUsers.jsx";
+import ActivityLogs from "./pages/ActivityLogs.jsx";
 
 // Main App component that defines the routes for the application
 function App() {
   return (
     <>
       <Routes>
+        <Route path="/activity-logs" element={<ActivityLogs />} />
         <Route
           path="/"
           element={

@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Models\ActivityLog;
 
 class UserController extends Controller
 {
@@ -82,6 +83,9 @@ class UserController extends Controller
 
             $user = User::create($validated);
 
+            // LOG USER CREATION
+            ActivityLog::logUser('created', $user);
+
             return response()->json($user, 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -129,7 +133,38 @@ class UserController extends Controller
                 'email.unique' => 'This email is already taken.'
             ]);
 
+            // Track changes
+            $changes = [];
+            $oldValues = [];
+            $newValues = [];
+
+            foreach ($validated as $key => $value) {
+                if ($user->{$key} != $value) {
+                    $changes[] = $key;
+                    $oldValues[$key] = $user->{$key};
+                    $newValues[$key] = $value;
+                }
+            }
+
+            // Check if role changed
+            if (in_array('role', $changes)) {
+                // LOG ROLE CHANGE
+                ActivityLog::logUser('role_changed', $user, [
+                    'old_role' => $oldValues['role'],
+                    'new_role' => $newValues['role']
+                ]);
+            }
+
             $user->update($validated);
+
+            // LOG USER UPDATE
+            if (!empty($changes)) {
+                ActivityLog::logUser('updated', $user, [
+                    'changes' => $changes,
+                    'old' => $oldValues,
+                    'new' => $newValues
+                ]);
+            }
 
             return response()->json($user);
 
@@ -168,6 +203,15 @@ class UserController extends Controller
 
             // Soft delete (sets deleted_at timestamp)
             $user->delete();
+
+            // LOG USER DELETION
+            ActivityLog::log(
+                'user.deleted',
+                "Deleted user '{$user['name']}'",
+                'user',
+                $id,
+                $user
+            );
 
             return response()->json([
                 'message' => 'User deleted successfully'
@@ -362,6 +406,183 @@ private function getChartData($query, $startDate, $endDate, $timeRange)
             ];
         });
     
+    return $chartData;
+}
+
+/**
+ * Get KPI Dashboard Data for Users
+ * GET /api/users/kpi
+ */
+public function getKPIData(Request $request)
+{
+    try {
+        $query = User::query();
+        $timeRange = $request->get('time_range', 'this_month');
+        
+        // Apply role filter
+        if ($request->filled('role')) {
+            $query->where('role', $request->role);
+        }
+        
+        // Get date range
+        [$startDate, $endDate, $previousStart, $previousEnd] = $this->getKPIDateRange($timeRange);
+        
+        // Current period users
+        $currentQuery = clone $query;
+        $currentQuery->whereBetween('created_at', [$startDate, $endDate]);
+        
+        // Previous period users (for comparison)
+        $previousQuery = clone $query;
+        $previousQuery->whereBetween('created_at', [$previousStart, $previousEnd]);
+        
+        // Get counts
+        $totalUsers = $currentQuery->count();
+        $previousTotal = $previousQuery->count();
+        
+        // Count by role in current period
+        $adminUsers = User::where('role', 'admin')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->count();
+            
+        $editorUsers = User::where('role', 'editor')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->count();
+            
+        $regularUsers = User::where('role', 'user')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->count();
+        
+        // Get chart data - group by date
+        $chartData = $this->getKPIChartData($query, $startDate, $endDate, $timeRange);
+        
+        // Get role distribution (all time)
+        $roleDistribution = User::select('role', DB::raw('count(*) as value'))
+            ->groupBy('role')
+            ->get()
+            ->map(function($item) {
+                return [
+                    'name' => ucfirst($item->role),
+                    'value' => (int) $item->value
+                ];
+            });
+        
+        return response()->json([
+            'totalUsers' => $totalUsers,
+            'previousTotal' => $previousTotal,
+            'adminUsers' => $adminUsers,
+            'editorUsers' => $editorUsers,
+            'regularUsers' => $regularUsers,
+            'chartData' => $chartData,
+            'roleDistribution' => $roleDistribution
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('Error fetching user KPI data', ['error' => $e->getMessage()]);
+        return response()->json([
+            'message' => 'Error fetching KPI data',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Get date range for KPI
+ */
+private function getKPIDateRange($timeRange)
+{
+    switch ($timeRange) {
+        case 'today':
+            $start = Carbon::today();
+            $end = Carbon::now();
+            $prevStart = Carbon::yesterday();
+            $prevEnd = Carbon::today();
+            break;
+            
+        case 'this_week':
+            $start = Carbon::now()->startOfWeek();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subWeek()->startOfWeek();
+            $prevEnd = Carbon::now()->subWeek()->endOfWeek();
+            break;
+            
+        case 'this_month':
+            $start = Carbon::now()->startOfMonth();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subMonth()->startOfMonth();
+            $prevEnd = Carbon::now()->subMonth()->endOfMonth();
+            break;
+            
+        case 'last_month':
+            $start = Carbon::now()->subMonth()->startOfMonth();
+            $end = Carbon::now()->subMonth()->endOfMonth();
+            $prevStart = Carbon::now()->subMonths(2)->startOfMonth();
+            $prevEnd = Carbon::now()->subMonths(2)->endOfMonth();
+            break;
+            
+        case 'this_year':
+            $start = Carbon::now()->startOfYear();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subYear()->startOfYear();
+            $prevEnd = Carbon::now()->subYear()->endOfYear();
+            break;
+            
+        case 'all_time':
+        default:
+            $start = User::min('created_at') ?? Carbon::now()->subYear();
+            $end = Carbon::now();
+            $prevStart = Carbon::parse($start)->subYear();
+            $prevEnd = Carbon::parse($start);
+            break;
+    }
+    
+    return [$start, $end, $prevStart, $prevEnd];
+}
+
+/**
+ * Get chart data for KPI
+ */
+private function getKPIChartData($query, $startDate, $endDate, $timeRange)
+{
+    $chartQuery = clone $query;
+    $chartQuery->whereBetween('created_at', [$startDate, $endDate]);
+
+    switch ($timeRange) {
+        case 'today':
+            $format = "FORMAT(created_at, 'HH:00')";
+            break;
+
+        case 'this_week':
+        case 'last_week':
+            $format = "FORMAT(created_at, 'ddd')";
+            break;
+
+        case 'this_month':
+        case 'last_month':
+            $format = "FORMAT(created_at, 'MMM dd')";
+            break;
+
+        case 'this_year':
+            $format = "FORMAT(created_at, 'MMM')";
+            break;
+
+        case 'all_time':
+        default:
+            $format = "FORMAT(created_at, 'MMM yyyy')";
+            break;
+    }
+
+    $chartData = $chartQuery
+        ->selectRaw("$format as date, COUNT(*) as users")
+        ->groupByRaw($format)   // ✅ correct
+        ->orderByRaw($format)   // ✅ correct
+        ->get()
+        ->map(function($item) {
+            return [
+                'date' => $item->date,
+                'users' => (int) $item->users
+            ];
+        });
+
     return $chartData;
 }
 }
