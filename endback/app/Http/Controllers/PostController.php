@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Post;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use App\Models\ActivityLog;
+
 
 class PostController extends Controller
 {
@@ -16,6 +19,7 @@ class PostController extends Controller
     | Index (Get All Posts with Filters, Sorting, Pagination)
     |--------------------------------------------------------------------------
     | UPDATED: Now handles search, filter, sort, pagination FROM FRONTEND
+    | UPDATED: Shows pinned posts first
     */
     public function index(Request $request)
     {
@@ -46,6 +50,10 @@ class PostController extends Controller
             // SORTING LOGIC (moved from frontend)
             $sortBy = $request->get('sort_by', 'date');
             $sortOrder = $request->get('sort_order', 'desc');
+
+            // PINNED POSTS FIRST
+            $query->orderBy('is_pinned', 'desc')
+                  ->orderBy('pinned_at', 'desc');
 
             switch ($sortBy) {
                 case 'title':
@@ -136,6 +144,9 @@ class PostController extends Controller
             $post = Post::create($validated);
             Log::info('Post created successfully', ['id' => $post->id]);
 
+            // LOG ACTIVITY
+            ActivityLog::logPost('created', $post);
+
             return response()->json([
                 'message' => 'Post created successfully!',
                 'post' => $post
@@ -199,6 +210,19 @@ class PostController extends Controller
 
             // Find post or throw 404
             $post = Post::findOrFail($id);
+
+            // Track changes for activity log
+            $changes = [];
+            $oldValues = [];
+            $newValues = [];
+            
+            foreach ($validated as $key => $value) {
+                if ($post->{$key} != $value) {
+                    $changes[] = $key;
+                    $oldValues[$key] = $post->{$key};
+                    $newValues[$key] = $value;
+                }
+            }
             
             // Update database row with validated data
             $post->update($validated);
@@ -238,6 +262,15 @@ class PostController extends Controller
             // Delete from database (soft delete)
             $post->delete();
 
+            // LOG DELETE ACTIVITY
+            ActivityLog::log(
+                'post.deleted',
+                "Deleted post '{$post['title']}'",
+                'post',
+                $id,
+                $post
+            );
+
             return response()->json([
                 'message' => 'Post deleted successfully'
             ]);
@@ -245,6 +278,64 @@ class PostController extends Controller
             Log::error('Error deleting post', ['error' => $e->getMessage()]);
             return response()->json([
                 'message' => 'Error deleting post',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * PIN POST
+     */
+    public function pin($id)
+    {
+        try {
+            $post = Post::findOrFail($id);
+            
+            $post->is_pinned = true;
+            $post->pinned_at = now();
+            $post->pinned_by = Auth::id();
+            $post->save();
+
+            // LOG PIN ACTIVITY
+            ActivityLog::logPost('pinned', $post);
+
+            return response()->json([
+                'message' => 'Post pinned successfully',
+                'post' => $post
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error pinning post', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Error pinning post',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * UNPIN POST
+     */
+    public function unpin($id)
+    {
+        try {
+            $post = Post::findOrFail($id);
+            
+            $post->is_pinned = false;
+            $post->pinned_at = null;
+            $post->pinned_by = null;
+            $post->save();
+
+            // LOG UNPIN ACTIVITY
+            ActivityLog::logPost('unpinned', $post);
+
+            return response()->json([
+                'message' => 'Post unpinned successfully',
+                'post' => $post
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error unpinning post', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Error unpinning post',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -337,6 +428,14 @@ class PostController extends Controller
             // Generate filename with timestamp
             $filename = 'posts-export-' . Carbon::now()->format('Y-m-d-His') . '.pdf';
 
+            // LOG EXPORT ACTIVITY
+            ActivityLog::logExport('posts', [
+                'date_range' => $dateRange,
+                'category' => $request->input('category'),
+                'status' => $request->input('status'),
+                'total_records' => $posts->count()
+            ]);
+
             // Return PDF download
             return $pdf->download($filename);
 
@@ -385,10 +484,6 @@ class PostController extends Controller
                 return 'All Time';
         }
     }
-
-    /**
- * Add these methods to your PostController.php
- */
 
 /**
  * Get KPI Dashboard Data for Posts
@@ -559,6 +654,169 @@ private function getChartData($query, $startDate, $endDate, $timeRange)
             ];
         });
     
+    return $chartData;
+}
+
+/**
+ * Get KPI Dashboard Data for Posts
+ * GET /api/posts/kpi
+ */
+public function getKPIData(Request $request)
+{
+    try {
+        $query = Post::query();
+        $timeRange = $request->get('time_range', 'this_month');
+        
+        // Apply category filter
+        if ($request->filled('category')) {
+            $query->where('category', $request->category);
+        }
+        
+        // Apply status filter
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        
+        // Get date range - RENAMED to avoid conflict with PDF export
+        [$startDate, $endDate, $previousStart, $previousEnd] = $this->getKPIDateRange($timeRange);
+        
+        // Current period posts
+        $currentQuery = clone $query;
+        $currentQuery->whereBetween('created_at', [$startDate, $endDate]);
+        
+        // Previous period posts (for comparison)
+        $previousQuery = clone $query;
+        $previousQuery->whereBetween('created_at', [$previousStart, $previousEnd]);
+        
+        // Get counts
+        $totalPosts = $currentQuery->count();
+        $previousTotal = $previousQuery->count();
+        
+        $publishedPosts = (clone $currentQuery)->where('status', 'Published')->count();
+        $draftPosts = (clone $currentQuery)->where('status', 'Draft')->count();
+        $archivedPosts = (clone $currentQuery)->where('status', 'Archived')->count();
+        
+        // Get chart data - RENAMED to avoid conflict with PDF export
+        $chartData = $this->getKPIChartData($query, $startDate, $endDate, $timeRange);
+        
+        return response()->json([
+            'totalPosts' => $totalPosts,
+            'previousTotal' => $previousTotal,
+            'publishedPosts' => $publishedPosts,
+            'draftPosts' => $draftPosts,
+            'archivedPosts' => $archivedPosts,
+            'chartData' => $chartData
+        ]);
+        
+    } catch (\Exception $e) {
+        Log::error('Error fetching KPI data', ['error' => $e->getMessage()]);
+        return response()->json([
+            'message' => 'Error fetching KPI data',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Get date range for KPI (NOT for PDF export)
+ * RENAMED to getKPIDateRange to avoid conflict
+ */
+private function getKPIDateRange($timeRange)
+{
+    switch ($timeRange) {
+        case 'today':
+            $start = Carbon::today();
+            $end = Carbon::now();
+            $prevStart = Carbon::yesterday();
+            $prevEnd = Carbon::today();
+            break;
+            
+        case 'this_week':
+            $start = Carbon::now()->startOfWeek();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subWeek()->startOfWeek();
+            $prevEnd = Carbon::now()->subWeek()->endOfWeek();
+            break;
+            
+        case 'this_month':
+            $start = Carbon::now()->startOfMonth();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subMonth()->startOfMonth();
+            $prevEnd = Carbon::now()->subMonth()->endOfMonth();
+            break;
+            
+        case 'last_month':
+            $start = Carbon::now()->subMonth()->startOfMonth();
+            $end = Carbon::now()->subMonth()->endOfMonth();
+            $prevStart = Carbon::now()->subMonths(2)->startOfMonth();
+            $prevEnd = Carbon::now()->subMonths(2)->endOfMonth();
+            break;
+            
+        case 'this_year':
+            $start = Carbon::now()->startOfYear();
+            $end = Carbon::now();
+            $prevStart = Carbon::now()->subYear()->startOfYear();
+            $prevEnd = Carbon::now()->subYear()->endOfYear();
+            break;
+            
+        case 'all_time':
+        default:
+            $start = Post::min('created_at') ?? Carbon::now()->subYear();
+            $end = Carbon::now();
+            $prevStart = Carbon::parse($start)->subYear();
+            $prevEnd = Carbon::parse($start);
+            break;
+    }
+    
+    return [$start, $end, $prevStart, $prevEnd];
+}
+
+/**
+ * Get chart data for KPI (NOT for PDF export)
+ * RENAMED to getKPIChartData to avoid conflict
+ */
+private function getKPIChartData($query, $startDate, $endDate, $timeRange)
+{
+    $chartQuery = clone $query;
+    $chartQuery->whereBetween('created_at', [$startDate, $endDate]);
+
+    switch ($timeRange) {
+        case 'today':
+            $format = "FORMAT(created_at, 'HH:00')";
+            break;
+
+        case 'this_week':
+        case 'last_week':
+            $format = "FORMAT(created_at, 'ddd')";
+            break;
+
+        case 'this_month':
+        case 'last_month':
+            $format = "FORMAT(created_at, 'MMM dd')";
+            break;
+
+        case 'this_year':
+            $format = "FORMAT(created_at, 'MMM')";
+            break;
+
+        case 'all_time':
+        default:
+            $format = "FORMAT(created_at, 'MMM yyyy')";
+            break;
+    }
+
+    $chartData = $chartQuery
+        ->selectRaw("$format as date, COUNT(*) as posts")
+        ->groupByRaw($format)   // ✅ correct for SQL Server
+        ->orderByRaw($format)   // ✅ correct for SQL Server
+        ->get()
+        ->map(function($item) {
+            return [
+                'date' => $item->date,
+                'posts' => (int) $item->posts
+            ];
+        });
+
     return $chartData;
 }
 }

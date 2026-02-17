@@ -5,7 +5,9 @@ import LogoutButton from "../components/LogoutButton";
 import ExportButton from "../components/ExportButton";
 import ManageUsersButton from "../components/ManageUsersButton";
 import CreateNewButton from "../components/CreateNewButton";
- import PostsKPIDashboard from "../components/PostsKPIDashboard";
+import PostsKPIDashboard from "../components/PostsKPIDashboard";
+import ActivityLogs from "./ActivityLogs";
+import ActivityLogsButton from "../components/ActivityLogsButton";
 
 export default function Home() {
   // Data states
@@ -160,6 +162,34 @@ export default function Home() {
     setCurrentPage(1);
   };
 
+  // Handle pin/unpin
+  const handlePinToggle = async (post) => {
+    try {
+      const token = localStorage.getItem("token");
+      const endpoint = post.is_pinned 
+        ? `http://localhost:8000/api/posts/${post.id}/unpin`
+        : `http://localhost:8000/api/posts/${post.id}/pin`;
+      
+      await axios.post(endpoint, {}, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      // Refresh posts to show updated pin status
+      fetchPosts();
+      
+      // Show success message
+      setSuccessMessage(post.is_pinned ? 'Post unpinned!' : 'Post pinned!');
+      setShowSuccessModal(true);
+      setTimeout(() => setShowSuccessModal(false), 2000);
+      
+    } catch (err) {
+      console.error('Failed to toggle pin:', err);
+      alert('Failed to update pin status');
+    }
+  };
+
   return (
     <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
       <header className="mb-8 border-b-2 border-gray-800 pb-2 grid grid-cols-3 items-start">
@@ -181,17 +211,20 @@ export default function Home() {
       </header>
 
       <main>
-
-        {/*KPI Dashboard */}
-        <PostsKPIDashboard />
         
         {/* All Posts Section */}
+          {role === "admin" && (
+            <>
+              <PostsKPIDashboard />
+            </>
+          )}
+
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <h2 style={{ margin: "0" }}>All Posts</h2>
-          
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
             {role === "admin" && (
               <>
+                <ActivityLogsButton />
                 <ManageUsersButton />
                 <ExportButton />
               </>
@@ -372,11 +405,51 @@ export default function Home() {
                     </td>
                     <td style={{ padding: "15px" }}>{new Date(post.created_at).toLocaleDateString()}</td>
                     <td style={{ padding: "15px", textAlign: "center" }}>
+
+                      {/* Pin Badge/Button - Shows for ALL, but only Editor/Admin can click */}
+                      {role === "user" ? (
+                        // Regular users see pin status but CANNOT click
+                        post.is_pinned && (
+                          <span
+                            style={{
+                              padding: "6px 12px",
+                              marginRight: "1.5px",
+                              backgroundColor: "#9C27B0",
+                              color: "white",
+                              borderRadius: "4px",
+                              fontSize: "12px",
+                              fontWeight: "bold",
+                              display: "inline-block"
+                            }}
+                          >
+                            📌
+                          </span>
+                        )
+                      ) : (
+                        // Editor/Admin can click to pin/unpin
+                        <button
+                          onClick={() => handlePinToggle(post)}
+                          title={post.is_pinned ? "Unpin this post" : "Pin this post"}
+                          style={{
+                            padding: "6px 12px",
+                            marginRight: "1.5px",
+                            backgroundColor: post.is_pinned ? "#9C27B0" : "#e0e0e0",
+                            color: post.is_pinned ? "white" : "#666",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: post.is_pinned ? "bold" : "normal"
+                          }}
+                        >
+                          {post.is_pinned ? "📌" : "📌"}
+                        </button>
+                      )}
                       <button
                         onClick={() => openViewModal(post)}
                         style={{
                           padding: "6px 12px",
-                          marginRight: "5px",
+                          marginRight: "1.5px",
                           backgroundColor: "#2196F3",
                           color: "white",
                           border: "none",
@@ -385,14 +458,14 @@ export default function Home() {
                           fontSize: "12px"
                         }}
                       >
-                        View
+                        👁️
                       </button>
                       {(role === "editor" || role === "admin") && (
                       <Link
                         to={`/edit/${post.id}`}
                         style={{
                           padding: "6px 12px",
-                          marginRight: "5px",
+                          marginRight: "1.5px",
                           backgroundColor: "#FF9800",
                           color: "white",
                           textDecoration: "none",
@@ -401,7 +474,7 @@ export default function Home() {
                           display: "inline-block"
                         }}
                       >
-                        Edit
+                        ✏️
                       </Link>
                       )}
                       {role === "admin" && (
@@ -409,6 +482,7 @@ export default function Home() {
                         onClick={() => openDeleteModal(post)}
                         style={{
                           padding: "6px 12px",
+                          marginRight: "1.5px",
                           backgroundColor: "#f44336",
                           color: "white",
                           border: "none",
@@ -417,7 +491,7 @@ export default function Home() {
                           fontSize: "12px"
                         }}
                       >
-                        Delete
+                        🗑️
                       </button>
                       )}
                     </td>

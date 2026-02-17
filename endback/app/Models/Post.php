@@ -22,7 +22,10 @@ class Post extends Model
         'author',
         'category',
         'status',
-        'content'
+        'content',
+        'is_pinned',
+        'pinned_at',
+        'pinned_by',
     ];
     
     /*
@@ -34,6 +37,25 @@ class Post extends Model
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
-        'deleted_at' => 'datetime'
+        'deleted_at' => 'datetime',
+        'pinned_at' => 'datetime',
+        'is_pinned' => 'boolean',
     ];
+
+    /**
+     * Scope to get pinned posts first
+     */
+    public function scopePinned($query)
+    {
+        return $query->where('is_pinned', true)
+            ->orderBy('pinned_at', 'desc');
+    }
+
+    /**
+     * Get user who pinned this post
+     */
+    public function pinnedBy()
+    {
+        return $this->belongsTo(User::class, 'pinned_by');
+    }
 }
